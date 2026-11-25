@@ -11,5 +11,6 @@
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "drizzle"
     }
-  ]
+  ],
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-oauth-kv" }]
 }

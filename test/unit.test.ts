@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import app from '../src/index'
+import { app } from '../src/index'
 
 describe('GET /', () => {
   it('200 を返し、Hello! を含むHTMLを返す', async () => {

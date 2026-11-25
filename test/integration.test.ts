@@ -7,4 +7,9 @@ describe('Worker 統合テスト', () => {
     expect(res.status).toBe(200)
     expect(await res.text()).toContain('Hello!')
   })
+
+  it('未認証の /mcp は 401 を返す', async () => {
+    const res = await exports.default.fetch('http://example.com/mcp')
+    expect(res.status).toBe(401)
+  })
 })
