@@ -4,6 +4,7 @@ import { Hono } from 'hono'
 import { exchangeGitHubCode, fetchGitHubUser, githubAuthorizeUrl } from './auth/github'
 import * as schema from './db/schema'
 import { ensureUserWithDefaultList } from './db/signup'
+import { handleMcpRequest, type McpProps } from './mcp/handler'
 import { renderer } from './renderer'
 
 type AppEnv = {
@@ -109,16 +110,24 @@ app.get('/callback', async (c) => {
   return new Response(null, { status: 302, headers })
 })
 
-const apiHandler = {
-  async fetch(_request: Request, _env: AppEnv, ctx: ExecutionContext) {
-    const props = (ctx as { props?: unknown }).props ?? null
-    return Response.json({ ok: true, props })
+export const mcpApiHandler = {
+  async fetch(request: Request, env: AppEnv, ctx: ExecutionContext) {
+    if (request.method !== 'POST') {
+      return Response.json(
+        { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'POST only' } },
+        { status: 405 },
+      )
+    }
+    const props = (ctx as unknown as { props?: McpProps }).props
+    if (!props) return new Response('unauthorized', { status: 401 })
+    const db = drizzle(env.DB, { schema })
+    return handleMcpRequest(db, props, await request.json())
   },
 }
 
 export default new OAuthProvider<AppEnv>({
   apiRoute: '/mcp',
-  apiHandler: apiHandler as never,
+  apiHandler: mcpApiHandler as never,
   defaultHandler: app as never,
   authorizeEndpoint: '/authorize',
   tokenEndpoint: '/token',

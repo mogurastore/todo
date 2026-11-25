@@ -1,26 +1,15 @@
-import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import { beforeEach, describe, expect, it } from 'vitest'
-import migrationSql from '../drizzle/0001_init.sql'
 import * as schema from '../src/db/schema'
 import { ensureUserWithDefaultList } from '../src/db/signup'
+import { applyMigrations, testD1 } from './helpers'
 
 function d1db() {
-  const d1 = (env as unknown as { DB: D1Database }).DB
-  if (!d1) throw new Error('DB binding missing')
-  return d1
+  return testD1()
 }
 
-beforeEach(async () => {
-  const statements = migrationSql
-    .split(';')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  for (const stmt of statements) {
-    await d1db().prepare(stmt).run()
-  }
-})
+beforeEach(applyMigrations)
 
 describe('Signup #14', () => {
   it('初回はUser＋Identity＋Inboxが1セット作られる', async () => {
