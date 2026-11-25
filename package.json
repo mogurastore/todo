@@ -12,11 +12,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "drizzle-orm": "0.45.4",
     "hono": "^4.13.16"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.44.0",
     "@cloudflare/vitest-plugin": "^1.9.0",
+    "drizzle-kit": "0.31.11",
     "typescript": "^5.9.3",
     "vite": "^8.1.4",
     "vite-ssr-components": "^0.8.0",
