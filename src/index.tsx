@@ -34,7 +34,27 @@ app.get('/authorize', async (c) => {
     lookupClient(clientId: string): Promise<{ name?: string } | null>
     beginConsent(request: unknown): Promise<{ handle: string; headers: Headers }>
   }
-  const request = await oauth.parseAuthRequest(c.req.raw)
+  let request: { clientId: string }
+  try {
+    request = await oauth.parseAuthRequest(c.req.raw)
+  } catch (e) {
+    const err = e as { redirectUri?: string; description?: string }
+    if (err.redirectUri) {
+      const redirect = new URL(err.redirectUri)
+      redirect.searchParams.set('error', 'invalid_request')
+      return c.redirect(redirect.toString())
+    }
+    const url = new URL(c.req.url)
+    const received = url.searchParams.get('client_id') ?? '(none)'
+    console.warn('authorize rejected', { receivedClientId: received, error: String(e) })
+    return c.html(
+      `<html><body><h1>Authorization failed</h1>` +
+        `<p>${String((e as { description?: string }).description ?? e).replace(/</g, '&lt;')}</p>` +
+        `<p>client_id: ${received.replace(/</g, '&lt;')}</p>` +
+        `<p>Inspector側の接続を作り直して再登録してください。</p></body></html>`,
+      400,
+    )
+  }
   const client = await oauth.lookupClient(request.clientId)
   const consent = await oauth.beginConsent(request)
   const name = (client?.name ?? request.clientId).replace(/</g, '&lt;')
@@ -102,7 +122,7 @@ app.get('/callback', async (c) => {
   await ensureUserWithDefaultList(database, { provider: 'github', providerUserId })
   const { redirectTo } = await oauth.completeAuthorization({
     request: original,
-    userId: `github:${providerUserId}`,
+    userId: `github_${providerUserId}`,
     scope: [],
     props: { provider: 'github', providerUserId },
   })
