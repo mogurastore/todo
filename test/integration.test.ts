@@ -12,4 +12,18 @@ describe('Worker 統合テスト', () => {
     const res = await exports.default.fetch('http://example.com/mcp')
     expect(res.status).toBe(401)
   })
+
+  it('OAuth discovery metadataを返す', async () => {
+    const res = await exports.default.fetch(
+      'http://example.com/.well-known/oauth-authorization-server',
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      authorization_endpoint: string
+      token_endpoint: string
+      registration_endpoint?: string
+    }
+    expect(body.authorization_endpoint).toContain('/authorize')
+    expect(body.token_endpoint).toContain('/token')
+  })
 })

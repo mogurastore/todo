@@ -1,0 +1,4 @@
+# ローカル開発用。コピーして使う: cp .dev.vars.example .dev.vars
+# .dev.vars は git に入れないこと。
+GITHUB_CLIENT_ID=your-github-oauth-app-client-id
+GITHUB_CLIENT_SECRET=your-github-oauth-app-client-secret
