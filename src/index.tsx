@@ -132,6 +132,7 @@ export default new OAuthProvider<AppEnv>({
   authorizeEndpoint: '/authorize',
   tokenEndpoint: '/token',
   clientRegistrationEndpoint: '/register',
+  clientIdMetadataDocumentEnabled: true,
   scopesSupported: ['mcp:read', 'mcp:write', 'offline_access'],
   // TODO: 本番デプロイ時のドメインに合わせる（wrangler dev/多数環境では要見直し）
   resourceMetadata: {
