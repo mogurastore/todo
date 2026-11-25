@@ -21,7 +21,7 @@ function post(body: unknown, props?: unknown) {
 }
 
 describe('MCP配線 #15', () => {
-  it('認証済みのtools/listは読取り3ツールを返す', async () => {
+  it('認証済みのtools/listは6ツールを返す', async () => {
     const db = drizzle(testD1(), { schema })
     await ensureUserWithDefaultList(db, { provider: 'github', providerUserId: 'wire1' })
     const res = await post(
@@ -30,9 +30,12 @@ describe('MCP配線 #15', () => {
     )
     const body = (await res.json()) as { result: { tools: { name: string }[] } }
     expect(body.result.tools.map((t) => t.name).sort()).toEqual([
+      'create_todo',
+      'delete_todo',
       'get_todo',
       'list_lists',
       'list_todos',
+      'update_todo',
     ])
   })
 

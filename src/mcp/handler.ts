@@ -64,6 +64,43 @@ const TOOL_DEFS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'create_todo',
+    description: 'Create a todo in my default list',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        done: { type: 'boolean', description: 'initial state, default false' },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_todo',
+    description: 'Update title and/or done state of my todo',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number' },
+        title: { type: 'string' },
+        done: { type: 'boolean' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_todo',
+    description: 'Delete my todo by id',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'number' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
 ]
 
 async function resolveUserId(db: Db, props: McpProps): Promise<number | null> {
@@ -78,6 +115,16 @@ async function resolveUserId(db: Db, props: McpProps): Promise<number | null> {
     )
     .limit(1)
   return rows[0]?.userId ?? null
+}
+
+async function ownedTodoId(db: Db, userId: number, todoId: number): Promise<boolean> {
+  const rows = await db
+    .select({ todoId: schema.todos.id })
+    .from(schema.todos)
+    .innerJoin(schema.lists, eq(schema.todos.listId, schema.lists.id))
+    .where(and(eq(schema.todos.id, todoId), eq(schema.lists.userId, userId)))
+    .limit(1)
+  return rows.length > 0
 }
 
 async function defaultListId(db: Db, userId: number): Promise<number | null> {
@@ -161,6 +208,59 @@ export async function handleMcpRequest(db: Db, props: McpProps, body: unknown): 
         .limit(1)
       if (rows.length === 0) return ok(id, toolError('Todo not found'))
       return ok(id, textResult(toTodo(rows[0].todo)))
+    }
+    case 'create_todo': {
+      if (typeof args.title !== 'string' || args.title.trim() === '') {
+        return fail(id, -32602, 'title must be a non-empty string')
+      }
+      if ('done' in args && typeof args.done !== 'boolean') {
+        return fail(id, -32602, 'done must be a boolean')
+      }
+      const userId = await resolveUserId(db, props)
+      if (userId === null) return ok(id, toolError('Todo not found'))
+      const listId = await defaultListId(db, userId)
+      if (listId === null) return ok(id, toolError('Todo not found'))
+      const [created] = await db
+        .insert(schema.todos)
+        .values({
+          listId,
+          title: args.title.trim(),
+          done: args.done === true ? 1 : 0,
+        })
+        .returning()
+      return ok(id, textResult(toTodo(created)))
+    }
+    case 'update_todo': {
+      if (typeof args.id !== 'number') return fail(id, -32602, 'id must be a number')
+      if ('title' in args && (typeof args.title !== 'string' || args.title.trim() === '')) {
+        return fail(id, -32602, 'title must be a non-empty string')
+      }
+      if ('done' in args && typeof args.done !== 'boolean') {
+        return fail(id, -32602, 'done must be a boolean')
+      }
+      if (!('title' in args) && !('done' in args)) {
+        return fail(id, -32602, 'nothing to update: give title and/or done')
+      }
+      const userId = await resolveUserId(db, props)
+      if (userId === null) return ok(id, toolError('Todo not found'))
+      if (!(await ownedTodoId(db, userId, args.id))) return ok(id, toolError('Todo not found'))
+      const patch: { title?: string; done?: number } = {}
+      if (typeof args.title === 'string') patch.title = args.title.trim()
+      if (typeof args.done === 'boolean') patch.done = args.done ? 1 : 0
+      const [updated] = await db
+        .update(schema.todos)
+        .set(patch)
+        .where(eq(schema.todos.id, args.id))
+        .returning()
+      return ok(id, textResult(toTodo(updated)))
+    }
+    case 'delete_todo': {
+      if (typeof args.id !== 'number') return fail(id, -32602, 'id must be a number')
+      const userId = await resolveUserId(db, props)
+      if (userId === null) return ok(id, toolError('Todo not found'))
+      if (!(await ownedTodoId(db, userId, args.id))) return ok(id, toolError('Todo not found'))
+      await db.delete(schema.todos).where(eq(schema.todos.id, args.id))
+      return ok(id, textResult({ deleted: true, id: args.id }))
     }
     default:
       return fail(id, -32602, `unknown tool: ${params.name}`)
