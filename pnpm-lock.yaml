@@ -175,6 +175,9 @@ importers:
 
   .:
     dependencies:
+      '@cloudflare/workers-oauth-provider':
+        specifier: ^1.4.0
+        version: 1.4.0
       '@modelcontextprotocol/server':
         specifier: ^2.4.0
         version: 2.4.0
@@ -329,6 +332,9 @@ packages:
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
+
+  '@cloudflare/workers-oauth-provider@1.4.0':
+    resolution: {integrity: sha512-NWiN3ixxM+P81fEd5AkBfpV34WgrWu9tLrf5gR6wl6eX6EQTlns/UvE5vRBYmlhtRqla0EFFrE+Mq91ZLeeR7g==}
 
   '@cloudflare/workers-utils@0.56.0':
     resolution: {integrity: sha512-Fw3/zR+pQp+5hKn1CHIRkCYz49fyAb2qRqCq01jBGqlKL0rRnZyXYD4j0h9cjaWPYYQUOe5y6L7BNp2ZwsHg5A==}
@@ -1532,6 +1538,8 @@ snapshots:
 
   '@cloudflare/workerd-windows-64@1.20261119.1':
     optional: true
+
+  '@cloudflare/workers-oauth-provider@1.4.0': {}
 
   '@cloudflare/workers-utils@0.56.0(vitest@5.1.1(vite@8.3.8(esbuild@0.28.2)))':
     dependencies:

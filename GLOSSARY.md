@@ -11,3 +11,7 @@ _Avoid_: healthcheck, echo
 **利用者**:
 GitHubアカウントで認証されたTodoの使用者。
 _Avoid_: ユーザー, アカウント
+
+**MCP利用者**:
+MCPクライアント経由でTodoを利用する第三者。
+_Avoid_: ユーザー

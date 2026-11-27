@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import app from '../src/index'
+import { app } from '../src/index'
 
 describe('GET /', () => {
   it('200 を返し、未ログインではログインボタンを含むHTMLを返す', async () => {

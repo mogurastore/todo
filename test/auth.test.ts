@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import app from '../src/index'
+import { app } from '../src/index'
 import { signSession, verifySession } from '../src/auth'
 
 const env = {

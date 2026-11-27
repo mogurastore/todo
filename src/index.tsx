@@ -1,4 +1,5 @@
 import { createMcpHandler } from '@modelcontextprotocol/server'
+import OAuthProvider from '@cloudflare/workers-oauth-provider'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
@@ -25,15 +26,15 @@ function isSecure(c: { req: { url: string } }): boolean {
   return new URL(c.req.url).protocol === 'https:'
 }
 
-type Bindings = CloudflareBindings & AuthEnv
+type Bindings = CloudflareBindings & AuthEnv & { OAUTH_KV?: KVNamespace }
 
-const app = new Hono<{ Bindings: Bindings }>()
+export const app = new Hono<{ Bindings: Bindings }>()
 
 app.use(renderer)
 
 app.get('/', async (c) => {
   const sessionToken = getCookie(c, 'session')
-  const user = sessionToken ? await getCookieSessionUser(c) : null
+  const user = sessionToken ? await getCookieSessionUser(c as never) : null
   if (!user || !sessionToken) {
     return c.render(
       <div>
@@ -110,7 +111,7 @@ const mcpHandler = createMcpHandler(() => createMcpServer())
 app.use('/mcp', async (c, next) => {
   const token = extractBearerToken(c)
   if (!token) return next()
-  const user = await getBearerSessionUser(c)
+  const user = await getBearerSessionUser(c as never)
   if (!user) return c.text('unauthorized', 401)
   await next()
 })
@@ -120,4 +121,30 @@ app.all('/mcp', (c: Context) => {
   return parsed.then((parsedBody) => mcpHandler.fetch(c.req.raw, { parsedBody }))
 })
 
-export default app
+function buildOAuthProvider(request: Request) {
+  const origin = new URL(request.url).origin
+  const resource = `${origin}/mcp`
+  const mcpApiHandler = {
+    fetch: (req: Request) => mcpHandler.fetch(req),
+  }
+  return new OAuthProvider({
+    apiRoute: '/mcp',
+    apiHandler: mcpApiHandler as never,
+    defaultHandler: app as never,
+    authorizeEndpoint: '/authorize',
+    tokenEndpoint: '/oauth/token',
+    clientRegistrationEndpoint: '/oauth/register',
+    scopesSupported: ['mcp:read', 'mcp:write', 'offline_access'],
+    resourceMetadata: {
+      resource,
+      authorization_servers: [origin],
+    },
+    requiredScopes: ['mcp:read'],
+  })
+}
+
+export default {
+  async fetch(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
+    return buildOAuthProvider(request).fetch(request, env as never, ctx as never)
+  },
+}
