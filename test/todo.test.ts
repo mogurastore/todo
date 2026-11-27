@@ -1,0 +1,43 @@
+import { describe, expect, it } from 'vitest'
+import { DEFAULT_LIST_ID, createMemoryTodoStore } from '../src/todo'
+
+describe('TodoStore seam', () => {
+  it('作成時はデフォルトのリストに入り、前後空白を落とす', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, '  牛乳を買う  ')
+    expect(t.listId).toBe(DEFAULT_LIST_ID)
+    expect(t.title).toBe('牛乳を買う')
+    expect(t.done).toBe(false)
+  })
+
+  it('listは利用者で分離される', async () => {
+    const store = createMemoryTodoStore()
+    await store.create(1, 'aのtodo')
+    await store.create(2, 'bのtodo')
+    const a = await store.list(1)
+    expect(a.map((t) => t.title)).toEqual(['aのtodo'])
+  })
+
+  it('汎用updateで題名と完了を変えられる', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'before')
+    const next = await store.update(1, t.id, { title: 'after', done: true })
+    expect(next?.title).toBe('after')
+    expect(next?.done).toBe(true)
+  })
+
+  it('空題名のupdateは旧題名を保つ', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'keep')
+    const next = await store.update(1, t.id, { title: '   ' })
+    expect(next?.title).toBe('keep')
+  })
+
+  it('他人のtodoはupdate/removeできない', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'mine')
+    expect(await store.update(2, t.id, { done: true })).toBeNull()
+    expect(await store.remove(2, t.id)).toBe(false)
+    expect((await store.list(1)).length).toBe(1)
+  })
+})

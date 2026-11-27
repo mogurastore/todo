@@ -4,6 +4,7 @@ import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { renderer } from './renderer'
 import { createMcpServer } from './mcp'
+import { createMemoryTodoStore, type Todo } from './todo'
 import {
   buildLoginUrl,
   exchangeCodeForToken,
@@ -33,10 +34,78 @@ export const app = new Hono<{ Bindings: Bindings }>()
 
 app.use(renderer)
 
+const memoryTodos = createMemoryTodoStore()
+
+function getTodoStore() {
+  return memoryTodos
+}
+
+async function requireUser(c: { req: { header(n: string): string | undefined } }): Promise<{ login: string; id: number; avatar_url?: string } | null> {
+  const sessionToken = getCookie(c as never, 'session')
+  if (!sessionToken) return null
+  return getCookieSessionUser(c as never)
+}
+
+type TodoFilter = 'all' | 'open' | 'done'
+
+function TodoB({ todos, filter }: { todos: Todo[]; filter: TodoFilter }) {
+  const open = todos.filter((t) => !t.done).length
+  const done = todos.filter((t) => t.done).length
+  const shown = todos.filter((t) => (filter === 'open' ? !t.done : filter === 'done' ? t.done : true))
+  return (
+    <section style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', gap: 16 }}>
+        <nav style={{ minWidth: 140, borderRight: '1px solid #ccc', paddingRight: 8 }}>
+          <h3>リスト</h3>
+          <ul>
+            <li>デフォルト</li>
+          </ul>
+          <h3>フィルタ</h3>
+          <ul>
+            <li>
+              <a href="/?filter=all">すべて ({todos.length})</a>
+            </li>
+            <li>
+              <a href="/?filter=open">未完了 ({open})</a>
+            </li>
+            <li>
+              <a href="/?filter=done">完了 ({done})</a>
+            </li>
+          </ul>
+        </nav>
+        <div style={{ flex: 1 }}>
+          <h2>デフォルト</h2>
+          <form method="post" action="/todos">
+            <input type="text" name="title" placeholder="新しいTodo" maxlength={200} style={{ width: '60%' }} />
+            <button type="submit">追加</button>
+          </form>
+          {shown.length === 0 ? (
+            <p>Todoはありません</p>
+          ) : (
+            <ul>
+              {shown.map((t) => (
+                <li key={t.id}>
+                  <form method="post" action={`/todos/${t.id}/toggle`} style={{ display: 'inline' }}>
+                    <input type="hidden" name="done" value={t.done ? '0' : '1'} />
+                    <button type="submit">{t.done ? '戻す' : '完了'}</button>
+                  </form>{' '}
+                  {t.done ? <s>{t.title}</s> : t.title}{' '}
+                  <form method="post" action={`/todos/${t.id}/delete`} style={{ display: 'inline' }}>
+                    <button type="submit">削除</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 app.get('/', async (c) => {
-  const sessionToken = getCookie(c, 'session')
-  const user = sessionToken ? await getCookieSessionUser(c as never) : null
-  if (!user || !sessionToken) {
+  const user = await requireUser(c)
+  if (!user) {
     return c.render(
       <div>
         <h1>Todo</h1>
@@ -44,6 +113,9 @@ app.get('/', async (c) => {
       </div>
     )
   }
+  const rawFilter = c.req.query('filter')
+  const filter: TodoFilter = rawFilter === 'open' || rawFilter === 'done' ? rawFilter : 'all'
+  const todos = await getTodoStore().list(user.id)
   return c.render(
     <div>
       <h1>Todo</h1>
@@ -53,8 +125,34 @@ app.get('/', async (c) => {
       <p>
         <a href="/auth/logout">ログアウト</a>
       </p>
+      <TodoB todos={todos} filter={filter} />
     </div>
   )
+})
+
+app.post('/todos', async (c) => {
+  const user = await requireUser(c)
+  if (!user) return c.redirect('/', 302)
+  const form = await c.req.raw.formData()
+  const title = String(form.get('title') ?? '').trim().slice(0, 200)
+  if (title) await getTodoStore().create(user.id, title)
+  return c.redirect('/?filter=all', 302)
+})
+
+app.post('/todos/:id/toggle', async (c) => {
+  const user = await requireUser(c)
+  if (!user) return c.redirect('/', 302)
+  const form = await c.req.raw.formData()
+  const done = String(form.get('done') ?? '1') === '1'
+  await getTodoStore().update(user.id, c.req.param('id'), { done })
+  return c.redirect(c.req.header('referer') ?? '/', 302)
+})
+
+app.post('/todos/:id/delete', async (c) => {
+  const user = await requireUser(c)
+  if (!user) return c.redirect('/', 302)
+  await getTodoStore().remove(user.id, c.req.param('id'))
+  return c.redirect(c.req.header('referer') ?? '/', 302)
 })
 
 app.get('/auth/login', (c) => {
