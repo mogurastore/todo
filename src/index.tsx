@@ -46,12 +46,7 @@ async function requireUser(c: { req: { header(n: string): string | undefined } }
   return getCookieSessionUser(c as never)
 }
 
-type TodoFilter = 'all' | 'open' | 'done'
-
-function TodoB({ todos, filter }: { todos: Todo[]; filter: TodoFilter }) {
-  const open = todos.filter((t) => !t.done).length
-  const done = todos.filter((t) => t.done).length
-  const shown = todos.filter((t) => (filter === 'open' ? !t.done : filter === 'done' ? t.done : true))
+function TodoB({ todos }: { todos: Todo[] }) {
   return (
     <section style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', gap: 16 }}>
@@ -60,18 +55,6 @@ function TodoB({ todos, filter }: { todos: Todo[]; filter: TodoFilter }) {
           <ul>
             <li>デフォルト</li>
           </ul>
-          <h3>フィルタ</h3>
-          <ul>
-            <li>
-              <a href="/?filter=all">すべて ({todos.length})</a>
-            </li>
-            <li>
-              <a href="/?filter=open">未完了 ({open})</a>
-            </li>
-            <li>
-              <a href="/?filter=done">完了 ({done})</a>
-            </li>
-          </ul>
         </nav>
         <div style={{ flex: 1 }}>
           <h2>デフォルト</h2>
@@ -79,11 +62,11 @@ function TodoB({ todos, filter }: { todos: Todo[]; filter: TodoFilter }) {
             <input type="text" name="title" placeholder="新しいTodo" maxlength={200} style={{ width: '60%' }} />
             <button type="submit">追加</button>
           </form>
-          {shown.length === 0 ? (
+          {todos.length === 0 ? (
             <p>Todoはありません</p>
           ) : (
             <ul>
-              {shown.map((t) => (
+              {todos.map((t) => (
                 <li key={t.id}>
                   <form method="post" action={`/todos/${t.id}/toggle`} style={{ display: 'inline' }}>
                     <input type="hidden" name="done" value={t.done ? '0' : '1'} />
@@ -113,8 +96,6 @@ app.get('/', async (c) => {
       </div>
     )
   }
-  const rawFilter = c.req.query('filter')
-  const filter: TodoFilter = rawFilter === 'open' || rawFilter === 'done' ? rawFilter : 'all'
   const todos = await getTodoStore().list(user.id)
   return c.render(
     <div>
@@ -125,7 +106,7 @@ app.get('/', async (c) => {
       <p>
         <a href="/auth/logout">ログアウト</a>
       </p>
-      <TodoB todos={todos} filter={filter} />
+      <TodoB todos={todos} />
     </div>
   )
 })
@@ -136,7 +117,7 @@ app.post('/todos', async (c) => {
   const form = await c.req.raw.formData()
   const title = String(form.get('title') ?? '').trim().slice(0, 200)
   if (title) await getTodoStore().create(user.id, title)
-  return c.redirect('/?filter=all', 302)
+  return c.redirect('/', 302)
 })
 
 app.post('/todos/:id/toggle', async (c) => {

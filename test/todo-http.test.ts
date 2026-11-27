@@ -50,8 +50,9 @@ describe('Todo HTTP seam (B表示)', () => {
       env
     )
     expect(res.status).toBe(302)
-    html = await (await app.request('/?filter=done', { headers: { Cookie: cookie } }, env)).text()
+    html = await (await app.request('/', { headers: { Cookie: cookie } }, env)).text()
     expect(html).toContain(title)
+    expect(html).toContain(`<s>${title}</s>`)
 
     res = await app.request(
       `/todos/${id}/delete`,
