@@ -1,0 +1,6 @@
+# ローカル開発用 (wrangler dev が自動読込)。本物は .dev.vars にコピーして使う。
+# cp .dev.vars.example .dev.vars
+GITHUB_CLIENT_ID=your-github-oauth-client-id
+GITHUB_CLIENT_SECRET=your-github-oauth-client-secret
+# openssl rand -hex 32 で生成した乱数
+SESSION_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
