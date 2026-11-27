@@ -1,6 +1,25 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { app } from '../src/index'
+import worker, { app } from '../src/index'
 import { signSession, verifySession } from '../src/auth'
+
+function createKV() {
+  const store = new Map<string, string>()
+  return {
+    async get(k: string, t?: unknown) {
+      const v = store.get(k) ?? null
+      if (v === null) return null
+      const type = typeof t === 'string' ? t : (t as { type?: string } | undefined)?.type
+      if (type === 'json') {
+        try { return JSON.parse(v) } catch { return v }
+      }
+      return v
+    },
+    async put(k: string, v: string) { store.set(k, typeof v === 'string' ? v : JSON.stringify(v)) },
+    async delete(k: string) { store.delete(k) },
+    async list() { return { keys: [], list_complete: true, cursor: '' } },
+  }
+}
+const workerCtx = { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext
 
 const env = {
   GITHUB_CLIENT_ID: 'test-client-id',
@@ -95,31 +114,22 @@ describe('GET /auth/callback', () => {
   })
 })
 
-describe('MCP Bearer', () => {
+describe('MCP旧Bearer撤去 (#27)', () => {
   const mcpBody = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
   const mcpHeaders = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }
+  const wenv = { OAUTH_KV: createKV() } as never
 
-  it('Bearerなしでもpingは公開のまま', async () => {
-    const res = await app.request('/mcp', { method: 'POST', headers: mcpHeaders, body: mcpBody }, env)
-    expect(res.status).toBe(200)
-  })
-
-  it('不正Bearerは401', async () => {
-    const res = await app.request(
-      '/mcp',
-      { method: 'POST', headers: { ...mcpHeaders, Authorization: 'Bearer invalid' }, body: mcpBody },
-      env
+  it('旧手貼りBearerでは/mcpが通らない', async () => {
+    const token = await signSession({ login: 'octocat', id: 42 }, env.SESSION_SECRET)
+    const res = await worker.fetch(
+      new Request('http://localhost/mcp', { method: 'POST', headers: { ...mcpHeaders, Authorization: `Bearer ${token}` }, body: mcpBody }),
+      wenv, workerCtx
     )
     expect(res.status).toBe(401)
   })
 
-  it('正規Bearerは200', async () => {
-    const token = await signSession({ login: 'octocat', id: 42 }, env.SESSION_SECRET)
-    const res = await app.request(
-      '/mcp',
-      { method: 'POST', headers: { ...mcpHeaders, Authorization: `Bearer ${token}` }, body: mcpBody },
-      env
-    )
-    expect(res.status).toBe(200)
+  it('無認可の直叩きも401', async () => {
+    const res = await worker.fetch(new Request('http://localhost/mcp', { method: 'POST', headers: mcpHeaders, body: mcpBody }), wenv, workerCtx)
+    expect(res.status).toBe(401)
   })
 })

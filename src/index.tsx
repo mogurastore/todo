@@ -1,16 +1,13 @@
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import OAuthProvider, { AuthorizationError } from '@cloudflare/workers-oauth-provider'
 import { Hono } from 'hono'
-import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { renderer } from './renderer'
 import { createMcpServer } from './mcp'
 import {
   buildLoginUrl,
   exchangeCodeForToken,
-  extractBearerToken,
   fetchGitHubUser,
-  getBearerSessionUser,
   getCookieSessionUser,
   randomState,
   SESSION_MAX_AGE,
@@ -56,10 +53,9 @@ app.get('/', async (c) => {
       <p>
         <a href="/auth/logout">ログアウト</a>
       </p>
-      <details>
-        <summary>MCP用トークン</summary>
-        <code>{sessionToken}</code>
-      </details>
+      <p>
+        <a href="/authorize">MCP接続</a>
+      </p>
     </div>
   )
 })
@@ -207,21 +203,6 @@ app.get('/oauth/callback', async (c) => {
     }
     return c.text(`auth failed: ${(e as Error).message}`, 502)
   }
-})
-
-const mcpHandler = createMcpHandler(() => createMcpServer())
-
-app.use('/mcp', async (c, next) => {
-  const token = extractBearerToken(c)
-  if (!token) return next()
-  const user = await getBearerSessionUser(c as never)
-  if (!user) return c.text('unauthorized', 401)
-  await next()
-})
-
-app.all('/mcp', (c: Context) => {
-  const parsed = c.req.raw.clone().json().catch(() => undefined)
-  return parsed.then((parsedBody) => mcpHandler.fetch(c.req.raw, { parsedBody }))
 })
 
 function buildOAuthProvider(request: Request) {
