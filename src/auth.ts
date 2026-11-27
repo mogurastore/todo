@@ -32,31 +32,12 @@ export async function verifySession(token: string, secret: string): Promise<Sess
   }
 }
 
-export function extractBearerToken(c: Pick<Context, 'req'>): string | null {
-  const auth = c.req.header('Authorization')
-  if (!auth?.startsWith('Bearer ')) return null
-  const token = auth.slice('Bearer '.length).trim()
-  return token || null
-}
-
 export async function getCookieSessionUser(c: Context<{ Bindings: AuthEnv }>): Promise<SessionPayload | null> {
   const secret = (c.env as AuthEnv | undefined)?.SESSION_SECRET
   if (!secret) return null
   const token = getCookie(c, 'session')
   if (!token) return null
   return verifySession(token, secret)
-}
-
-export async function getBearerSessionUser(c: Context<{ Bindings: AuthEnv }>): Promise<SessionPayload | null> {
-  const secret = (c.env as AuthEnv | undefined)?.SESSION_SECRET
-  if (!secret) return null
-  const token = extractBearerToken(c)
-  if (!token) return null
-  return verifySession(token, secret)
-}
-
-export async function getSessionUser(c: Context<{ Bindings: AuthEnv }>): Promise<SessionPayload | null> {
-  return (await getBearerSessionUser(c)) ?? getCookieSessionUser(c)
 }
 
 export function buildLoginUrl(clientId: string, redirectUri: string, state: string, scope = 'read:user'): string {

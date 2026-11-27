@@ -1,36 +1,32 @@
-# MCP (Remote, Streamable HTTP)
+# MCP (Remote, Streamable HTTP, OAuth必須)
 
-## 載せ方レシピ
+OAuth単一Worker構成(ADR-0003)。`/mcp`は無認可で401+発見メタデータを返し、手貼りBearerは不可。
 
-- baseは素の `new Hono()` のままにする。`createMcpHonoApp()` をbase全体に適用しないこと。Host検証ミドルウェアが全ルートにかかり、公開Worker上で既存ルートが403になる。
-- MCPハンドラはリクエスト単位のファクトリで作る:
+## 接続手順
 
-```tsx
-import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
-import * as z from 'zod/v4'
+1. MCPクライアントに `https://<host>/mcp` を登録する
+2. 401の `resource_metadata` から `/.well-known/oauth-authorization-server` を辿り、DCR登録→`/authorize`でGitHub承認する
+3. 発行トークンで `/mcp` を叩き、`ping`/`whoami` が通ることを確認する
 
-const mcpHandler = createMcpHandler(() => createMcpServer())
+## 載せ方
 
-app.all('/mcp', (c: Context) => {
-  const parsed = c.req.raw.clone().json().catch(() => undefined)
-  return parsed.then((parsedBody) => mcpHandler.fetch(c.req.raw, { parsedBody }))
-})
-```
-
-`clone()` で読むのは元のストリームを消費しないため。`parsedBody` を渡すのは公式Hono統合と同じ流儀。
+- `OAuthProvider({ apiRoute: '/mcp', ... })` で `/mcp` を保護し、残りはHono(`defaultHandler`)に委譲する
+- 認可UIは `GET /authorize`(consent)→`POST /authorize`(GitHubへ)→`GET /oauth/callback`(complete)の3点
+- MCPハンドラはリクエスト単位に作り、`ctx.props`(login/id)を渡す:
+- `app.all('/mcp')` 直載せ・手貼りBearer判定は撤去済み。残したら二重経路になる
 
 ## テストの注意
 
-- `app.request('/mcp', ...)` は相対パスでよい。Hostヘッダは不要（baseにHost検証が無いため）。
-- `Accept: application/json, text/event-stream` を付ける。応答はSSEの `message` イベントなのでテキストにツール名が含まれることをassertする。
+- 外側経由は `worker.fetch(new Request('http://localhost/...'), { OAUTH_KV })` を使う。KVモックは `get(key, {type:'json'})` をJSON解釈すること
+- `Accept: application/json, text/event-stream` を付ける。応答はSSEなのでテキストにツール名が含まれることをassertする
+- 旧Bearer(JWT使い回し)は401になることをassertする(`test/auth.test.ts`)
 
 ## 開発サーバと確認コマンド
 
-- 本番相当の確認は `pnpm exec wrangler dev --port 8787`。
-- `pnpm dev` でも `/mcp` は動くが、viteは `[::1]` のみで待つためURLは `http://localhost:<port>` を使うこと（`127.0.0.1` は接続拒否になる）。
-- Inspector等は `npx` ではなく `pnpm dlx` を使う:
+- 本番相当の確認は `pnpm exec wrangler dev --port 8787`
+- Inspector等は `pnpm dlx` を使う:
 
 ```sh
 pnpm dlx @modelcontextprotocol/inspector
-# Transport: Streamable HTTP / URL: http://localhost:8787/mcp
+# Transport: Streamable HTTP / URL: http://localhost:8787/mcp (OAuthフローあり)
 ```

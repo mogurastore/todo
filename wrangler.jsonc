@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "todo",
   "compatibility_date": "2025-08-03",
-  "compatibility_flags": ["nodejs_compat"],
-  "main": "./src/index.tsx"
+  "compatibility_flags": ["nodejs_compat", "enable_nodejs_inspector_module", "global_fetch_strictly_public"],
+  "main": "./src/index.tsx",
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "00000000000000000000000000000000" }]
 }
