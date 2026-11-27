@@ -53,9 +53,6 @@ app.get('/', async (c) => {
       <p>
         <a href="/auth/logout">ログアウト</a>
       </p>
-      <p>
-        <a href="/authorize">MCP接続</a>
-      </p>
     </div>
   )
 })
@@ -79,7 +76,43 @@ app.get('/auth/callback', async (c) => {
   const clientId = env.GITHUB_CLIENT_ID
   const clientSecret = env.GITHUB_CLIENT_SECRET
   const sessionSecret = env.SESSION_SECRET
-  if (!clientId || !clientSecret || !sessionSecret) return c.text('OAuth not configured', 500)
+  if (!clientId || !clientSecret) return c.text('OAuth not configured', 500)
+  const oauth = (c.env as unknown as { OAUTH_PROVIDER?: {
+    finishUpstream(r: Request): Promise<{ request: { scope: string[] }; headers: Headers }>
+    completeAuthorization(o: { request: unknown; userId: string; metadata: unknown; scope: string[]; props: unknown }): Promise<{ redirectTo: string }>
+  } }).OAUTH_PROVIDER
+  if (oauth) {
+    try {
+      const { request: original, headers } = await oauth.finishUpstream(c.req.raw)
+      const url = new URL(c.req.url)
+      if (url.searchParams.get('error')) {
+        const out = new Headers(headers)
+        out.set('Content-Type', 'text/plain; charset=utf-8')
+        return new Response(`upstream error: ${url.searchParams.get('error')}`, { status: 400, headers: out })
+      }
+      const code = url.searchParams.get('code')
+      if (code) {
+        const redirectUri = `${getOrigin(c)}/auth/callback`
+        const accessToken = await exchangeCodeForToken(code, clientId, clientSecret, redirectUri)
+        const ghUser = await fetchGitHubUser(accessToken)
+        const { redirectTo } = await oauth.completeAuthorization({
+          request: original,
+          userId: String(ghUser.id),
+          metadata: {},
+          scope: original.scope,
+          props: { login: ghUser.login, id: ghUser.id, avatar_url: ghUser.avatar_url },
+        })
+        const out = new Headers(headers)
+        out.set('Location', redirectTo)
+        return new Response(null, { status: 302, headers: out })
+      }
+    } catch (e) {
+      if (e instanceof AuthorizationError) {
+        if (e.redirectTo) return c.redirect(e.redirectTo, 302)
+      }
+    }
+  }
+  if (!sessionSecret) return c.text('OAuth not configured', 500)
   const code = c.req.query('code')
   const state = c.req.query('state')
   const storedState = getCookie(c, 'oauth_state')
@@ -150,7 +183,7 @@ app.post('/authorize', async (c) => {
   try {
     const approved = await oauth.approveConsent(c.req.raw, handle)
     const { state, headers } = await oauth.beginUpstream(approved.request, { headers: approved.headers })
-    const redirectUri = `${getOrigin(c)}/oauth/callback`
+    const redirectUri = `${getOrigin(c)}/auth/callback`
     const out = new Headers(headers)
     out.set('Location', buildLoginUrl(clientId, redirectUri, state))
     return new Response(null, { status: 302, headers: out })
@@ -160,48 +193,6 @@ app.post('/authorize', async (c) => {
       return c.text(e.description, 400)
     }
     throw e
-  }
-})
-
-app.get('/oauth/callback', async (c) => {
-  const env = c.env as Bindings & { OAUTH_PROVIDER: {
-    finishUpstream(r: Request): Promise<{ request: { scope: string[] }; headers: Headers }>
-    completeAuthorization(o: { request: unknown; userId: string; metadata: unknown; scope: string[]; props: unknown }): Promise<{ redirectTo: string }>
-  } }
-  const oauth = env.OAUTH_PROVIDER
-  if (!oauth) return c.text('oauth not configured', 500)
-  const clientId = (c.env as AuthEnv | undefined)?.GITHUB_CLIENT_ID
-  const clientSecret = (c.env as AuthEnv | undefined)?.GITHUB_CLIENT_SECRET
-  if (!clientId || !clientSecret) return c.text('OAuth not configured', 500)
-  try {
-    const { request: original, headers } = await oauth.finishUpstream(c.req.raw)
-    const url = new URL(c.req.url)
-    if (url.searchParams.get('error')) {
-      const out = new Headers(headers)
-      out.set('Content-Type', 'text/plain; charset=utf-8')
-      return new Response(`upstream error: ${url.searchParams.get('error')}`, { status: 400, headers: out })
-    }
-    const code = url.searchParams.get('code')
-    if (!code) return c.text('missing code', 400)
-    const redirectUri = `${getOrigin(c)}/oauth/callback`
-    const accessToken = await exchangeCodeForToken(code, clientId, clientSecret, redirectUri)
-    const ghUser = await fetchGitHubUser(accessToken)
-    const { redirectTo } = await oauth.completeAuthorization({
-      request: original,
-      userId: String(ghUser.id),
-      metadata: {},
-      scope: original.scope,
-      props: { login: ghUser.login, id: ghUser.id, avatar_url: ghUser.avatar_url },
-    })
-    const out = new Headers(headers)
-    out.set('Location', redirectTo)
-    return new Response(null, { status: 302, headers: out })
-  } catch (e) {
-    if (e instanceof AuthorizationError) {
-      if (e.redirectTo) return c.redirect(e.redirectTo, 302)
-      return c.text(e.description, 400)
-    }
-    return c.text(`auth failed: ${(e as Error).message}`, 502)
   }
 })
 

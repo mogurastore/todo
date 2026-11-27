@@ -92,7 +92,7 @@ describe('OAuth認可→交換→/mcp疎通 (#26)', () => {
       if (u.includes('api.github.com/user')) return Response.json({ login: 'octocat', id: 42, avatar_url: 'https://x/avatar.png' })
       throw new Error(`unexpected fetch ${u}`)
     }))
-    const cb = await worker.fetch(new Request(`http://localhost/oauth/callback?code=code123&state=${ghState}`, { headers: { Cookie: jar } }), e, ctx)
+    const cb = await worker.fetch(new Request(`http://localhost/auth/callback?code=code123&state=${ghState}`, { headers: { Cookie: jar } }), e, ctx)
     expect(cb.status).toBe(302)
     const cbLoc = new URL(cb.headers.get('location')!)
     const code = cbLoc.searchParams.get('code')!
