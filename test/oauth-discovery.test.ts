@@ -4,11 +4,17 @@ import worker from '../src/index'
 function createKV() {
   const store = new Map<string, string>()
   return {
-    async get(key: string) {
-      return store.get(key) ?? null
+    async get(key: string, t?: unknown) {
+      const v = store.get(key) ?? null
+      if (v === null) return null
+      const type = typeof t === 'string' ? t : (t as { type?: string } | undefined)?.type
+      if (type === 'json') {
+        try { return JSON.parse(v) } catch { return v }
+      }
+      return v
     },
     async put(key: string, value: string) {
-      store.set(key, value)
+      store.set(key, typeof value === 'string' ? value : JSON.stringify(value))
     },
     async delete(key: string) {
       store.delete(key)
