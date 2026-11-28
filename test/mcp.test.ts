@@ -149,4 +149,21 @@ describe('MCPツール単体 (#27)', () => {
     const bobDelete = await callTool(bob, 18, 'delete_todo', { id: createdId })
     expect(bobDelete).toContain('not found')
   })
+
+  it('空白のみのtitleではTodoが作られない', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const bad = await handler.fetch(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'create_todo', arguments: { title: '   ' } } }),
+      })
+    )
+    const badText = await bad.text()
+    expect(badText).toContain('must not be blank')
+    const listedText = await callTool(handler, 21, 'list_todos', {})
+    expect(JSON.parse(parseFirstText(listedText))).toEqual([])
+  })
 })
