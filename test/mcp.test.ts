@@ -286,4 +286,26 @@ describe('MCPツール単体 (#27)', () => {
     const next = listed.find((t) => t.id !== createdId)!
     expect(next.dueDate).toBe('2026-11-08')
   })
+
+  it('spawnedFromIdは応答に含まれ、解除→再チェックで重複しない', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const createdText = await callTool(handler, 65, 'create_todo', {
+      title: 'ごみ出し',
+      dueDate: '2026-11-01',
+      repeat: { unit: 'week', interval: 1 },
+    })
+    const createdId = parseCreatedId(createdText)
+    expect(JSON.parse(parseFirstText(createdText)).spawnedFromId).toBeNull()
+    await callTool(handler, 66, 'update_todo', { id: createdId, done: true })
+    await callTool(handler, 67, 'update_todo', { id: createdId, done: false })
+    await callTool(handler, 68, 'update_todo', { id: createdId, done: true })
+    const listed = JSON.parse(parseFirstText(await callTool(handler, 69, 'list_todos', {}))) as {
+      id: string
+      spawnedFromId: string | null
+    }[]
+    expect(listed.length).toBe(2)
+    expect(listed.find((t) => t.id !== createdId)!.spawnedFromId).toBe(createdId)
+  })
 })

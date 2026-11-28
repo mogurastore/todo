@@ -17,6 +17,7 @@ export type Todo = {
   dueDate: string | null
   focusDate: string | null
   repeat: RepeatRule | null
+  spawnedFromId: string | null
 }
 
 // 繰り返しは後付け。旧行にフィールドが無くても
@@ -92,6 +93,9 @@ export function createMemoryTodoStore(): TodoStore & { clear(): void } {
   function readRepeat(t: Todo): RepeatRule | null {
     return (t as Todo).repeat ?? null
   }
+  function readSpawnedFromId(t: Todo): string | null {
+    return (t as Todo).spawnedFromId ?? null
+  }
   return {
     clear() {
       map.clear()
@@ -100,7 +104,7 @@ export function createMemoryTodoStore(): TodoStore & { clear(): void } {
       return [...map.values()]
         .filter((t) => t.userId === userId)
         .sort((a, b) => b.createdAt - a.createdAt)
-        .map((t) => ({ ...t, dueDate: readDueDate(t as Todo), focusDate: readFocusDate(t as Todo), repeat: readRepeat(t as Todo) }))
+        .map((t) => ({ ...t, dueDate: readDueDate(t as Todo), focusDate: readFocusDate(t as Todo), repeat: readRepeat(t as Todo), spawnedFromId: readSpawnedFromId(t as Todo) }))
     },
     async create(userId, title, dueDate, focusDate, repeat) {
       const now = Date.now()
@@ -114,6 +118,7 @@ export function createMemoryTodoStore(): TodoStore & { clear(): void } {
         dueDate: normalizeNullable(dueDate),
         focusDate: normalizeNullable(focusDate),
         repeat: repeat ?? null,
+        spawnedFromId: null,
       }
       map.set(todo.id, todo)
       return todo
@@ -134,18 +139,22 @@ export function createMemoryTodoStore(): TodoStore & { clear(): void } {
       }
       map.set(id, next)
       if (!t.done && next.done && finalRepeat && finalDueDate) {
-        const created: Todo = {
-          id: crypto.randomUUID(),
-          userId,
-          listId: next.listId,
-          title: next.title,
-          done: false,
-          createdAt: Date.now(),
-          dueDate: getNextDueDate(finalDueDate, finalRepeat),
-          focusDate: null,
-          repeat: finalRepeat,
+        const already = [...map.values()].some((x) => x.userId === userId && x.spawnedFromId === id)
+        if (!already) {
+          const created: Todo = {
+            id: crypto.randomUUID(),
+            userId,
+            listId: next.listId,
+            title: next.title,
+            done: false,
+            createdAt: Date.now(),
+            dueDate: getNextDueDate(finalDueDate, finalRepeat),
+            focusDate: null,
+            repeat: finalRepeat,
+            spawnedFromId: id,
+          }
+          map.set(created.id, created)
         }
-        map.set(created.id, created)
       }
       return next
     },

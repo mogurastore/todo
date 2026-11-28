@@ -99,4 +99,47 @@ describe('TodoStore seam', () => {
     expect(next.focusDate).toBeNull()
     expect(next.repeat).toEqual({ unit: 'week', interval: 1 })
   })
+
+  it('手作成のspawnedFromIdはnullで、生成時に親idが刻まれる', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'ごみ出し', '2026-11-01', null, { unit: 'week', interval: 1 })
+    expect(t.spawnedFromId).toBeNull()
+    await store.update(1, t.id, { done: true })
+    const all = await store.list(1)
+    const next = all.find((x) => x.id !== t.id)!
+    expect(next.spawnedFromId).toBe(t.id)
+  })
+
+  it('解除→再チェックで重複生成しない', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'ごみ出し', '2026-11-01', null, { unit: 'week', interval: 1 })
+    await store.update(1, t.id, { done: true })
+    await store.update(1, t.id, { done: false })
+    await store.update(1, t.id, { done: true })
+    expect((await store.list(1)).length).toBe(2)
+  })
+
+  it('子が完了済みでも再チェックで作らない', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'ごみ出し', '2026-11-01', null, { unit: 'week', interval: 1 })
+    await store.update(1, t.id, { done: true })
+    const child = (await store.list(1)).find((x) => x.id !== t.id)!
+    await store.update(1, child.id, { done: true })
+    await store.update(1, t.id, { done: false })
+    await store.update(1, t.id, { done: true })
+    expect((await store.list(1)).length).toBe(3)
+  })
+
+  it('子を手削除後は再チェックで作り直せる', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'ごみ出し', '2026-11-01', null, { unit: 'week', interval: 1 })
+    await store.update(1, t.id, { done: true })
+    const child = (await store.list(1)).find((x) => x.id !== t.id)!
+    await store.remove(1, child.id)
+    await store.update(1, t.id, { done: false })
+    await store.update(1, t.id, { done: true })
+    const all = await store.list(1)
+    expect(all.length).toBe(2)
+    expect(all.find((x) => x.id !== t.id)!.spawnedFromId).toBe(t.id)
+  })
 })
