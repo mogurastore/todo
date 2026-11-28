@@ -86,6 +86,19 @@ describe('TodoStore seam', () => {
     expect(getNextDueDate('2024-02-29', { unit: 'year', interval: 1 })).toBe('2025-02-28')
   })
 
+  it('週の曜日指定は直後の該当曜日に進む', () => {
+    // 2026-11-02=月曜、2026-11-04=水曜は既知リテラル
+    expect(getNextDueDate('2026-11-02', { unit: 'week', interval: 1, byWeekday: [3] })).toBe('2026-11-04')
+    expect(getNextDueDate('2026-11-03', { unit: 'week', interval: 1, byWeekday: [1] })).toBe('2026-11-09')
+  })
+
+  it('複数曜日×interval2は同週残りを含めた週ブロックで進む', () => {
+    // 月曜起点・月水・隔週 → 同週水曜、次は2週間後の月曜
+    expect(getNextDueDate('2026-11-02', { unit: 'week', interval: 2, byWeekday: [1, 3] })).toBe('2026-11-04')
+    expect(getNextDueDate('2026-11-04', { unit: 'week', interval: 2, byWeekday: [1, 3] })).toBe('2026-11-16')
+    expect(getNextDueDate('2026-11-02', { unit: 'week', interval: 2, byWeekday: [1] })).toBe('2026-11-16')
+  })
+
   it('完了で次回分のTodoが1件作られる', async () => {
     const store = createMemoryTodoStore()
     const t = await store.create(1, 'ごみ出し', '2026-11-01', null, { unit: 'week', interval: 1 })
@@ -141,5 +154,17 @@ describe('TodoStore seam', () => {
     const all = await store.list(1)
     expect(all.length).toBe(2)
     expect(all.find((x) => x.id !== t.id)!.spawnedFromId).toBe(t.id)
+  })
+
+  it('曜日指定の完了で次回が該当曜日に作られrepeatを継承する', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'ごみ出し', '2026-11-02', null, { unit: 'week', interval: 1, byWeekday: [3, 1] })
+    expect(t.repeat).toEqual({ unit: 'week', interval: 1, byWeekday: [1, 3] })
+    await store.update(1, t.id, { done: true })
+    const all = await store.list(1)
+    expect(all.length).toBe(2)
+    const next = all.find((x) => x.id !== t.id)!
+    expect(next.dueDate).toBe('2026-11-04')
+    expect(next.repeat).toEqual({ unit: 'week', interval: 1, byWeekday: [1, 3] })
   })
 })

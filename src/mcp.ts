@@ -35,12 +35,35 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
   const repeatSchema = z.object({
     unit: z.enum(['day', 'week', 'month', 'year']),
     interval: z.number().int().min(1).max(99),
+    byWeekday: z.array(z.number().int()).optional(),
   })
   const repeatInput = repeatSchema.nullish()
   const repeatRequired = () => ({
     content: [{ type: 'text' as const, text: 'repeat requires dueDate' }],
     isError: true as const,
   })
+  const byWeekdayRequired = (msg: string) => ({
+    content: [{ type: 'text' as const, text: msg }],
+    isError: true as const,
+  })
+  type RepeatArg = { unit: 'day' | 'week' | 'month' | 'year'; interval: number; byWeekday?: number[] } | null
+  function normalizeByWeekdayArg(byWeekday: number[] | undefined): number[] | undefined {
+    if (byWeekday === undefined) return undefined
+    return [...new Set(byWeekday)].sort((a, b) => a - b)
+  }
+  function validateRepeatByWeekday(repeat: RepeatArg | undefined): { ok: true; repeat: RepeatArg | undefined } | { ok: false; error: ReturnType<typeof byWeekdayRequired> } {
+    if (!repeat) return { ok: true, repeat }
+    const days = repeat.byWeekday
+    if (days === undefined) return { ok: true, repeat }
+    if (repeat.unit !== 'week') return { ok: false, error: byWeekdayRequired('byWeekday requires unit week') }
+    if (days.some((n) => !Number.isInteger(n) || n < 0 || n > 6)) {
+      return { ok: false, error: byWeekdayRequired('byWeekday must be 0-6') }
+    }
+    const normalized = normalizeByWeekdayArg(days)
+    if (!normalized || normalized.length === 0) return { ok: false, error: byWeekdayRequired('byWeekday must not be empty') }
+    if (normalized.length > 7) return { ok: false, error: byWeekdayRequired('byWeekday must be 0-6') }
+    return { ok: true, repeat: { ...repeat, byWeekday: normalized } }
+  }
   server.registerTool(
     'ping',
     {
@@ -92,16 +115,18 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
       title: string
       dueDate?: string | null
       focusToday?: boolean
-      repeat?: { unit: 'day' | 'week' | 'month' | 'year'; interval: number } | null
+      repeat?: { unit: 'day' | 'week' | 'month' | 'year'; interval: number; byWeekday?: number[] } | null
     }) => {
       if (userId === undefined) return unauthorized()
       if (repeat && !dueDate) return repeatRequired()
+      const checked = validateRepeatByWeekday(repeat)
+      if (!checked.ok) return checked.error
       const created = await todoStore.create(
         userId,
         title,
         dueDate ?? null,
         focusToday ? getJstTodayString() : null,
-        repeat ?? null
+        (checked.ok ? checked.repeat : null) ?? null
       )
       return { content: [{ type: 'text' as const, text: JSON.stringify(created) }] }
     }
@@ -146,17 +171,27 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
       done?: boolean
       dueDate?: string | null
       focusToday?: boolean
-      repeat?: { unit: 'day' | 'week' | 'month' | 'year'; interval: number } | null
+      repeat?: { unit: 'day' | 'week' | 'month' | 'year'; interval: number; byWeekday?: number[] } | null
     }) => {
       if (userId === undefined) return unauthorized()
       if (repeat && dueDate === null) return repeatRequired()
-      if (repeat || dueDate === null) {
+      const checked = validateRepeatByWeekday(repeat)
+      if (!checked.ok) return checked.error
+      const normalizedRepeat = (checked.ok ? checked.repeat : undefined) as
+        | { unit: 'day' | 'week' | 'month' | 'year'; interval: number; byWeekday?: number[] }
+        | null
+        | undefined
+      if (repeat !== undefined || dueDate === null) {
         const all = await todoStore.list(userId)
         const found = all.find((t) => t.id === id)
         if (!found) return notFound()
         const finalDue = dueDate !== undefined ? dueDate : found.dueDate
-        const finalRepeat = repeat !== undefined ? repeat : found.repeat
+        const finalRepeat = repeat !== undefined ? (normalizedRepeat as never) : found.repeat
         if (finalRepeat && !finalDue) return repeatRequired()
+        if (finalRepeat && (finalRepeat as { byWeekday?: number[] }).byWeekday !== undefined) {
+          const finalChecked = validateRepeatByWeekday(finalRepeat as never)
+          if (!finalChecked.ok) return finalChecked.error
+        }
       }
       const next = await todoStore.update(
         userId,
@@ -165,7 +200,7 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
           title,
           done,
           dueDate,
-          repeat,
+          repeat: repeat === undefined ? undefined : normalizedRepeat,
           ...(focusToday === undefined ? {} : { focusDate: focusToday ? getJstTodayString() : null }),
         }
       )
