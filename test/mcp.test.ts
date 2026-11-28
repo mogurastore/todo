@@ -166,4 +166,35 @@ describe('MCPツール単体 (#27)', () => {
     const listedText = await callTool(handler, 21, 'list_todos', {})
     expect(JSON.parse(parseFirstText(listedText))).toEqual([])
   })
+
+  it('create/updateでdueDateが回り、nullで解除できる', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const createdText = await callTool(handler, 30, 'create_todo', { title: '期限あり', dueDate: '2026-12-31' })
+    const createdId = parseCreatedId(createdText)
+    expect(JSON.parse(parseFirstText(createdText)).dueDate).toBe('2026-12-31')
+    const gotText = await callTool(handler, 31, 'get_todo', { id: createdId })
+    expect(JSON.parse(parseFirstText(gotText)).dueDate).toBe('2026-12-31')
+    const clearedText = await callTool(handler, 32, 'update_todo', { id: createdId, dueDate: null })
+    expect(JSON.parse(parseFirstText(clearedText)).dueDate).toBeNull()
+  })
+
+  it('実在しない日付は弾き、過去日は通す', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const bad = await handler.fetch(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 33, method: 'tools/call', params: { name: 'create_todo', arguments: { title: 'x', dueDate: '2026-02-30' } } }),
+      })
+    )
+    expect((await bad.text()).toLowerCase()).toContain('duedate')
+    const pastText = await callTool(handler, 34, 'create_todo', { title: 'old', dueDate: '2000-01-01' })
+    expect(JSON.parse(parseFirstText(pastText)).dueDate).toBe('2000-01-01')
+    const emptyText = await callTool(handler, 35, 'create_todo', { title: 'empty', dueDate: '' })
+    expect(JSON.parse(parseFirstText(emptyText)).dueDate).toBeNull()
+  })
 })
