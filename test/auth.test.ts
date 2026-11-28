@@ -1,24 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import worker, { app } from '../src/index'
 import { signSession, verifySession } from '../src/auth'
-
-function createKV() {
-  const store = new Map<string, string>()
-  return {
-    async get(k: string, t?: unknown) {
-      const v = store.get(k) ?? null
-      if (v === null) return null
-      const type = typeof t === 'string' ? t : (t as { type?: string } | undefined)?.type
-      if (type === 'json') {
-        try { return JSON.parse(v) } catch { return v }
-      }
-      return v
-    },
-    async put(k: string, v: string) { store.set(k, typeof v === 'string' ? v : JSON.stringify(v)) },
-    async delete(k: string) { store.delete(k) },
-    async list() { return { keys: [], list_complete: true, cursor: '' } },
-  }
-}
+import { createKV } from './helpers/mock-kv'
 const workerCtx = { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext
 
 const env = {
