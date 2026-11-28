@@ -1,29 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import worker from '../src/index'
-
-function createKV() {
-  const store = new Map<string, string>()
-  return {
-    async get(key: string, t?: unknown) {
-      const v = store.get(key) ?? null
-      if (v === null) return null
-      const type = typeof t === 'string' ? t : (t as { type?: string } | undefined)?.type
-      if (type === 'json') {
-        try { return JSON.parse(v) } catch { return v }
-      }
-      return v
-    },
-    async put(key: string, value: string) {
-      store.set(key, typeof value === 'string' ? value : JSON.stringify(value))
-    },
-    async delete(key: string) {
-      store.delete(key)
-    },
-    async list() {
-      return { keys: [], list_complete: true, cursor: '' }
-    },
-  }
-}
+import { createKV } from './helpers/mock-kv'
 
 const ctx = { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext
 

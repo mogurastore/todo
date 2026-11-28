@@ -1,23 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import worker from '../src/index'
-
-function createKV() {
-  const store = new Map<string, string>()
-  return {
-    async get(k: string, t?: unknown) {
-      const v = store.get(k) ?? null
-      if (v === null) return null
-      const type = typeof t === 'string' ? t : (t as { type?: string } | undefined)?.type
-      if (type === 'json') {
-        try { return JSON.parse(v) } catch { return v }
-      }
-      return v
-    },
-    async put(k: string, v: string) { store.set(k, typeof v === 'string' ? v : JSON.stringify(v)) },
-    async delete(k: string) { store.delete(k) },
-    async list() { return { keys: [], list_complete: true, cursor: '' } },
-  }
-}
+import { createKV } from './helpers/mock-kv'
 const ctx = { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext
 
 function env(extra: Record<string, string> = {}) {
@@ -37,7 +20,7 @@ async function sha256url(s: string) {
 describe('OAuth認可→交換→/mcp疎通 (#26)', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
-  it('authorizeからGitHub経由で認可しトークンでping/whoamiが通る', async () => {
+  async function issueMcpToken() {
     const e = env()
     // 1. client登録
     const reg = await worker.fetch(
@@ -113,6 +96,11 @@ describe('OAuth認可→交換→/mcp疎通 (#26)', () => {
     expect(tok.status).toBe(200)
     const { access_token } = (await tok.json()) as { access_token: string }
     expect(access_token).toBeTruthy()
+    return { e, access_token }
+  }
+
+  it('authorizeからGitHub経由で認可しトークンでping/whoamiが通る', async () => {
+    const { e, access_token } = await issueMcpToken()
 
     // 6. /mcp疎通 + 利用者情報
     const mcpHeaders = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Authorization: `Bearer ${access_token}` }
@@ -131,5 +119,28 @@ describe('OAuth認可→交換→/mcp疎通 (#26)', () => {
     const whoText = await who.text()
     expect(whoText).toContain('octocat')
     expect(whoText).toContain('42')
+  })
+
+  it('/mcp経由の作成が次のリクエストのlistに見える（store共有）', async () => {
+    const { e, access_token } = await issueMcpToken()
+    const mcpHeaders = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      Authorization: `Bearer ${access_token}`,
+    }
+    const call = (id: number, name: string, args: unknown) =>
+      worker.fetch(
+        new Request('http://localhost/mcp', {
+          method: 'POST',
+          headers: mcpHeaders,
+          body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } }),
+        }),
+        e,
+        ctx
+      )
+    const created = await (await call(11, 'create_todo', { title: '配線テスト' })).text()
+    expect(created).toContain('配線テスト')
+    const listed = await (await call(12, 'list_todos', {})).text()
+    expect(listed).toContain('配線テスト')
   })
 })

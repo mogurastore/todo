@@ -1,5 +1,7 @@
 # GitHub OAuthはステートレスJWT Cookie + MCPはBearerで使い回す
 
+> Superseded by ADR-0003。`/mcp` のBearer使い回しは撤去し、OAuthに一本化した。
+
 素のGitHub OAuth Authorization Codeフローで `/auth/login` → `/auth/callback` を行い、利用者情報 (login/id/avatar) を `SESSION_SECRET` 署名のJWTとしてHttpOnly Cookieに入れる。D1/KVは持たず、better-authは導入しない。`/mcp` は同一JWTを `Authorization: Bearer` でも受け付け、人用ページで発行したトークンをMCPクライアントに貼る運用にする。
 
 ## Considered Options
