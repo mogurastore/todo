@@ -281,7 +281,9 @@ function buildOAuthProvider(request: Request) {
   const mcpApiHandler = {
     fetch: (req: Request, _env: unknown, ctx: unknown) => {
       const props = (ctx as { props?: { login: string; id: number; avatar_url?: string } })?.props
-      const handler = createMcpHandler(() => createMcpServer(props as { login: string; id: number; avatar_url?: string } | undefined))
+      const handler = createMcpHandler(() =>
+        createMcpServer(props as { login: string; id: number; avatar_url?: string } | undefined, getTodoStore())
+      )
       return handler.fetch(req)
     },
   }
