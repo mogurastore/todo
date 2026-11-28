@@ -58,4 +58,14 @@ describe('TodoStore seam', () => {
     const t = await store.create(1, 'empty', '')
     expect(t.dueDate).toBeNull()
   })
+
+  it('フォーカス日は任意で保持され、nullで解除できる', async () => {
+    const store = createMemoryTodoStore()
+    const withFocus = await store.create(1, 'with', null, '2026-11-28')
+    expect(withFocus.focusDate).toBe('2026-11-28')
+    const without = await store.create(1, 'without')
+    expect(without.focusDate).toBeNull()
+    const cleared = await store.update(1, withFocus.id, { focusDate: null })
+    expect(cleared?.focusDate).toBeNull()
+  })
 })

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
-import { createMemoryTodoStore, type TodoStore } from './todo'
+import { createMemoryTodoStore, getJstTodayString, type TodoStore } from './todo'
 
 export type MCPUserProps = {
   login: string
@@ -55,25 +55,28 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
   server.registerTool(
     'list_todos',
     {
-      description: '自分のTodo一覧を返す',
-      inputSchema: z.object({ done: z.boolean().optional() }),
+      description: '自分のTodo一覧を返す。todayOnly=trueでフォーカス日がJST今日のものだけ',
+      inputSchema: z.object({ done: z.boolean().optional(), todayOnly: z.boolean().optional() }),
     },
-    async ({ done }: { done?: boolean }) => {
+    async ({ done, todayOnly }: { done?: boolean; todayOnly?: boolean }) => {
       if (userId === undefined) return unauthorized()
       const all = await todoStore.list(userId)
-      const filtered = done === undefined ? all : all.filter((t) => t.done === done)
+      const byDone = done === undefined ? all : all.filter((t) => t.done === done)
+      if (!todayOnly) return { content: [{ type: 'text' as const, text: JSON.stringify(byDone) }] }
+      const today = getJstTodayString()
+      const filtered = byDone.filter((t) => t.focusDate === today)
       return { content: [{ type: 'text' as const, text: JSON.stringify(filtered) }] }
     }
   )
   server.registerTool(
     'create_todo',
     {
-      description: 'Todoを作成する',
-      inputSchema: z.object({ title: titleSchema, dueDate: dueDateInput }),
+      description: 'Todoを作成する。focusToday=trueでフォーカス日にJST今日を刻む',
+      inputSchema: z.object({ title: titleSchema, dueDate: dueDateInput, focusToday: z.boolean().optional() }),
     },
-    async ({ title, dueDate }: { title: string; dueDate?: string | null }) => {
+    async ({ title, dueDate, focusToday }: { title: string; dueDate?: string | null; focusToday?: boolean }) => {
       if (userId === undefined) return unauthorized()
-      const created = await todoStore.create(userId, title, dueDate ?? null)
+      const created = await todoStore.create(userId, title, dueDate ?? null, focusToday ? getJstTodayString() : null)
       return { content: [{ type: 'text' as const, text: JSON.stringify(created) }] }
     }
   )
@@ -94,17 +97,27 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
   server.registerTool(
     'update_todo',
     {
-      description: 'Todoのtitle/done/dueDateを更新する。dueDateはnullで解除',
+      description: 'Todoのtitle/done/dueDateを更新する。dueDateはnullで解除。focusToday=trueで今日に付け替え、falseで解除',
       inputSchema: z.object({
         id: z.string(),
         title: titleSchema.optional(),
         done: z.boolean().optional(),
         dueDate: dueDateInput,
+        focusToday: z.boolean().optional(),
       }),
     },
-    async ({ id, title, done, dueDate }: { id: string; title?: string; done?: boolean; dueDate?: string | null }) => {
+    async ({ id, title, done, dueDate, focusToday }: { id: string; title?: string; done?: boolean; dueDate?: string | null; focusToday?: boolean }) => {
       if (userId === undefined) return unauthorized()
-      const next = await todoStore.update(userId, id, { title, done, dueDate })
+      const next = await todoStore.update(
+        userId,
+        id,
+        {
+          title,
+          done,
+          dueDate,
+          ...(focusToday === undefined ? {} : { focusDate: focusToday ? getJstTodayString() : null }),
+        }
+      )
       if (!next) return notFound()
       return { content: [{ type: 'text' as const, text: JSON.stringify(next) }] }
     }
