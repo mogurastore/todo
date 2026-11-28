@@ -4,6 +4,7 @@
   "packageManager": "pnpm@12.21.0",
   "scripts": {
     "dev": "vite",
+    "inspector": "pnpm dlx @modelcontextprotocol/inspector@latest",
     "build": "vite build",
     "preview": "$npm_execpath run build && vite preview",
     "deploy": "$npm_execpath run build && wrangler deploy",
