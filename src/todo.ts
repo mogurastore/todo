@@ -5,6 +5,7 @@ export type RepeatUnit = 'day' | 'week' | 'month' | 'year'
 export type RepeatRule = {
   unit: RepeatUnit
   interval: number
+  byWeekday?: number[]
 }
 
 export type Todo = {
@@ -50,6 +51,14 @@ function lastDayOfMonth(y: number, m: number): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate()
 }
 
+export function normalizeByWeekday(v: unknown): number[] | undefined {
+  if (v === undefined || v === null) return undefined
+  if (!Array.isArray(v)) return undefined
+  const uniq = [...new Set(v.filter((n) => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 6) as number[])]
+  uniq.sort((a, b) => a - b)
+  return uniq
+}
+
 export function getNextDueDate(dueDate: string, repeat: RepeatRule): string {
   const [y, m, d] = dueDate.split('-').map(Number)
   if (repeat.unit === 'day') {
@@ -57,6 +66,24 @@ export function getNextDueDate(dueDate: string, repeat: RepeatRule): string {
     return formatYmd(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate())
   }
   if (repeat.unit === 'week') {
+    const days = normalizeByWeekday(repeat.byWeekday)
+    if (days && days.length > 0) {
+      const base = Date.UTC(y, m - 1, d)
+      const baseDay = new Date(base).getUTCDay()
+      const baseSunday = base - baseDay * 86400000
+      const maxOffset = repeat.interval * 7 + 7
+      for (let offset = 1; offset <= maxOffset; offset++) {
+        const cand = new Date(base + offset * 86400000)
+        const w = cand.getUTCDay()
+        if (!days.includes(w)) continue
+        const candSunday = cand.getTime() - w * 86400000
+        const weekDiff = Math.round((candSunday - baseSunday) / 86400000 / 7)
+        if (weekDiff % repeat.interval === 0) {
+          return formatYmd(cand.getUTCFullYear(), cand.getUTCMonth() + 1, cand.getUTCDate())
+        }
+      }
+      throw new Error('no next weekday found')
+    }
     const dt = new Date(Date.UTC(y, m - 1, d + repeat.interval * 7))
     return formatYmd(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate())
   }
@@ -91,7 +118,15 @@ export function createMemoryTodoStore(): TodoStore & { clear(): void } {
     return normalizeNullable((t as Todo).focusDate)
   }
   function readRepeat(t: Todo): RepeatRule | null {
-    return (t as Todo).repeat ?? null
+    const r = (t as Todo).repeat ?? null
+    if (!r) return null
+    return normalizeRepeat(r)
+  }
+  function normalizeRepeat(r: RepeatRule | null | undefined): RepeatRule | null {
+    if (!r) return null
+    const days = normalizeByWeekday((r as RepeatRule).byWeekday)
+    if (days === undefined) return { unit: r.unit, interval: r.interval }
+    return { unit: r.unit, interval: r.interval, byWeekday: days }
   }
   function readSpawnedFromId(t: Todo): string | null {
     return (t as Todo).spawnedFromId ?? null
@@ -117,7 +152,7 @@ export function createMemoryTodoStore(): TodoStore & { clear(): void } {
         createdAt: now,
         dueDate: normalizeNullable(dueDate),
         focusDate: normalizeNullable(focusDate),
-        repeat: repeat ?? null,
+        repeat: normalizeRepeat(repeat ?? null),
         spawnedFromId: null,
       }
       map.set(todo.id, todo)
@@ -128,7 +163,7 @@ export function createMemoryTodoStore(): TodoStore & { clear(): void } {
       if (!t || t.userId !== userId) return null
       const title = patch.title !== undefined ? patch.title.trim().slice(0, 200) : t.title
       const finalDueDate = patch.dueDate !== undefined ? normalizeNullable(patch.dueDate) : readDueDate(t as Todo)
-      const finalRepeat = patch.repeat !== undefined ? patch.repeat : readRepeat(t as Todo)
+      const finalRepeat = normalizeRepeat(patch.repeat !== undefined ? patch.repeat : readRepeat(t as Todo))
       const next = {
         ...t,
         title: title || t.title,

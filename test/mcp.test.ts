@@ -308,4 +308,73 @@ describe('MCPツール単体 (#27)', () => {
     expect(listed.length).toBe(2)
     expect(listed.find((t) => t.id !== createdId)!.spawnedFromId).toBe(createdId)
   })
+
+  it('曜日指定の繰り返しは正規化され、次回は該当曜日に作られる', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const createdText = await callTool(handler, 70, 'create_todo', {
+      title: 'ごみ出し',
+      dueDate: '2026-11-02',
+      repeat: { unit: 'week', interval: 1, byWeekday: [3, 1, 1] },
+    })
+    const created = JSON.parse(parseFirstText(createdText))
+    expect(created.repeat).toEqual({ unit: 'week', interval: 1, byWeekday: [1, 3] })
+    const createdId = created.id as string
+    await callTool(handler, 71, 'update_todo', { id: createdId, done: true })
+    const listed = JSON.parse(parseFirstText(await callTool(handler, 72, 'list_todos', {}))) as {
+      id: string
+      dueDate: string | null
+      repeat: unknown
+    }[]
+    expect(listed.length).toBe(2)
+    const next = listed.find((t) => t.id !== createdId)!
+    expect(next.dueDate).toBe('2026-11-04')
+    expect(next.repeat).toEqual({ unit: 'week', interval: 1, byWeekday: [1, 3] })
+  })
+
+  it('曜日指定はweek以外・空・範囲外を弾く', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const badUnit = await handler.fetch(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 73,
+          method: 'tools/call',
+          params: { name: 'create_todo', arguments: { title: 'x', dueDate: '2026-11-02', repeat: { unit: 'day', interval: 1, byWeekday: [1] } } },
+        }),
+      })
+    )
+    expect((await badUnit.text()).toLowerCase()).toContain('byweekday')
+    const badEmpty = await handler.fetch(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 74,
+          method: 'tools/call',
+          params: { name: 'create_todo', arguments: { title: 'x', dueDate: '2026-11-02', repeat: { unit: 'week', interval: 1, byWeekday: [] } } },
+        }),
+      })
+    )
+    expect((await badEmpty.text()).toLowerCase()).toContain('byweekday')
+    const badRange = await handler.fetch(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 75,
+          method: 'tools/call',
+          params: { name: 'create_todo', arguments: { title: 'x', dueDate: '2026-11-02', repeat: { unit: 'week', interval: 1, byWeekday: [7] } } },
+        }),
+      })
+    )
+    expect((await badRange.text()).toLowerCase()).toContain('byweekday')
+  })
 })
