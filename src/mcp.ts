@@ -32,6 +32,15 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
     .regex(DUE_DATE_RE, { message: 'dueDate must be YYYY-MM-DD' })
     .refine(isRealDueDate, { message: 'dueDate must be a real date' })
   const dueDateInput = z.preprocess((v) => (v === '' ? null : v), dueDateSchema.nullish())
+  const repeatSchema = z.object({
+    unit: z.enum(['day', 'week', 'month', 'year']),
+    interval: z.number().int().min(1).max(99),
+  })
+  const repeatInput = repeatSchema.nullish()
+  const repeatRequired = () => ({
+    content: [{ type: 'text' as const, text: 'repeat requires dueDate' }],
+    isError: true as const,
+  })
   server.registerTool(
     'ping',
     {
@@ -72,11 +81,28 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
     'create_todo',
     {
       description: 'Todoを作成する。focusToday=trueでフォーカス日にJST今日を刻む',
-      inputSchema: z.object({ title: titleSchema, dueDate: dueDateInput, focusToday: z.boolean().optional() }),
+      inputSchema: z.object({ title: titleSchema, dueDate: dueDateInput, focusToday: z.boolean().optional(), repeat: repeatInput }),
     },
-    async ({ title, dueDate, focusToday }: { title: string; dueDate?: string | null; focusToday?: boolean }) => {
+    async ({
+      title,
+      dueDate,
+      focusToday,
+      repeat,
+    }: {
+      title: string
+      dueDate?: string | null
+      focusToday?: boolean
+      repeat?: { unit: 'day' | 'week' | 'month' | 'year'; interval: number } | null
+    }) => {
       if (userId === undefined) return unauthorized()
-      const created = await todoStore.create(userId, title, dueDate ?? null, focusToday ? getJstTodayString() : null)
+      if (repeat && !dueDate) return repeatRequired()
+      const created = await todoStore.create(
+        userId,
+        title,
+        dueDate ?? null,
+        focusToday ? getJstTodayString() : null,
+        repeat ?? null
+      )
       return { content: [{ type: 'text' as const, text: JSON.stringify(created) }] }
     }
   )
@@ -104,10 +130,34 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
         done: z.boolean().optional(),
         dueDate: dueDateInput,
         focusToday: z.boolean().optional(),
+        repeat: repeatInput,
       }),
     },
-    async ({ id, title, done, dueDate, focusToday }: { id: string; title?: string; done?: boolean; dueDate?: string | null; focusToday?: boolean }) => {
+    async ({
+      id,
+      title,
+      done,
+      dueDate,
+      focusToday,
+      repeat,
+    }: {
+      id: string
+      title?: string
+      done?: boolean
+      dueDate?: string | null
+      focusToday?: boolean
+      repeat?: { unit: 'day' | 'week' | 'month' | 'year'; interval: number } | null
+    }) => {
       if (userId === undefined) return unauthorized()
+      if (repeat && dueDate === null) return repeatRequired()
+      if (repeat || dueDate === null) {
+        const all = await todoStore.list(userId)
+        const found = all.find((t) => t.id === id)
+        if (!found) return notFound()
+        const finalDue = dueDate !== undefined ? dueDate : found.dueDate
+        const finalRepeat = repeat !== undefined ? repeat : found.repeat
+        if (finalRepeat && !finalDue) return repeatRequired()
+      }
       const next = await todoStore.update(
         userId,
         id,
@@ -115,6 +165,7 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
           title,
           done,
           dueDate,
+          repeat,
           ...(focusToday === undefined ? {} : { focusDate: focusToday ? getJstTodayString() : null }),
         }
       )

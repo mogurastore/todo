@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_LIST_ID, createMemoryTodoStore } from '../src/todo'
+import { DEFAULT_LIST_ID, createMemoryTodoStore, getNextDueDate } from '../src/todo'
 
 describe('TodoStore seam', () => {
   it('作成時はデフォルトのリストに入り、前後空白を落とす', async () => {
@@ -67,5 +67,36 @@ describe('TodoStore seam', () => {
     expect(without.focusDate).toBeNull()
     const cleared = await store.update(1, withFocus.id, { focusDate: null })
     expect(cleared?.focusDate).toBeNull()
+  })
+
+  it('繰り返し規則は任意で保持され、nullで解除できる', async () => {
+    const store = createMemoryTodoStore()
+    const withRepeat = await store.create(1, 'with', '2026-11-28', null, { unit: 'day', interval: 3 })
+    expect(withRepeat.repeat).toEqual({ unit: 'day', interval: 3 })
+    const without = await store.create(1, 'without')
+    expect(without.repeat).toBeNull()
+    const cleared = await store.update(1, withRepeat.id, { repeat: null })
+    expect(cleared?.repeat).toBeNull()
+  })
+
+  it('次回期限はカレンダー加算で月末は丸める', () => {
+    expect(getNextDueDate('2026-11-28', { unit: 'day', interval: 3 })).toBe('2026-12-01')
+    expect(getNextDueDate('2026-11-01', { unit: 'week', interval: 1 })).toBe('2026-11-08')
+    expect(getNextDueDate('2026-01-31', { unit: 'month', interval: 1 })).toBe('2026-02-28')
+    expect(getNextDueDate('2024-02-29', { unit: 'year', interval: 1 })).toBe('2025-02-28')
+  })
+
+  it('完了で次回分のTodoが1件作られる', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'ごみ出し', '2026-11-01', null, { unit: 'week', interval: 1 })
+    await store.update(1, t.id, { done: true })
+    const all = await store.list(1)
+    expect(all.length).toBe(2)
+    const next = all.find((x) => x.id !== t.id)!
+    expect(next.title).toBe('ごみ出し')
+    expect(next.done).toBe(false)
+    expect(next.dueDate).toBe('2026-11-08')
+    expect(next.focusDate).toBeNull()
+    expect(next.repeat).toEqual({ unit: 'week', interval: 1 })
   })
 })

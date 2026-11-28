@@ -246,4 +246,44 @@ describe('MCPツール単体 (#27)', () => {
     expect(todayText).not.toContain('昨日の集中')
     expect(todayText).toContain('今日やり切った')
   })
+
+  it('createで繰り返しが回り、期限なしには付けられない', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const createdText = await callTool(handler, 60, 'create_todo', {
+      title: 'ごみ出し',
+      dueDate: '2026-11-01',
+      repeat: { unit: 'week', interval: 1 },
+    })
+    expect(JSON.parse(parseFirstText(createdText)).repeat).toEqual({ unit: 'week', interval: 1 })
+    const badText = await callTool(handler, 61, 'create_todo', {
+      title: '期限なし繰り返し',
+      repeat: { unit: 'day', interval: 1 },
+    })
+    expect(badText.toLowerCase()).toContain('repeat')
+  })
+
+  it('完了で次回分が作られ、update応答にrepeatが含まれる', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const createdId = parseCreatedId(
+      await callTool(handler, 62, 'create_todo', {
+        title: 'ごみ出し',
+        dueDate: '2026-11-01',
+        repeat: { unit: 'week', interval: 1 },
+      })
+    )
+    const updatedText = await callTool(handler, 63, 'update_todo', { id: createdId, done: true })
+    expect(JSON.parse(parseFirstText(updatedText)).repeat).toEqual({ unit: 'week', interval: 1 })
+    const listed = JSON.parse(parseFirstText(await callTool(handler, 64, 'list_todos', {}))) as {
+      id: string
+      title: string
+      dueDate: string | null
+    }[]
+    expect(listed.length).toBe(2)
+    const next = listed.find((t) => t.id !== createdId)!
+    expect(next.dueDate).toBe('2026-11-08')
+  })
 })
