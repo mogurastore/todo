@@ -19,6 +19,19 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
     .min(1)
     .max(200)
     .refine((s) => s.trim().length > 0, { message: 'title must not be blank' })
+  const DUE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+  function isRealDueDate(s: string): boolean {
+    if (!DUE_DATE_RE.test(s)) return false
+    const [y, m, d] = s.split('-').map(Number)
+    if (m < 1 || m > 12 || d < 1 || d > 31) return false
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
+  }
+  const dueDateSchema = z
+    .string()
+    .regex(DUE_DATE_RE, { message: 'dueDate must be YYYY-MM-DD' })
+    .refine(isRealDueDate, { message: 'dueDate must be a real date' })
+  const dueDateInput = z.preprocess((v) => (v === '' ? null : v), dueDateSchema.nullish())
   server.registerTool(
     'ping',
     {
@@ -56,11 +69,11 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
     'create_todo',
     {
       description: 'Todoを作成する',
-      inputSchema: z.object({ title: titleSchema }),
+      inputSchema: z.object({ title: titleSchema, dueDate: dueDateInput }),
     },
-    async ({ title }: { title: string }) => {
+    async ({ title, dueDate }: { title: string; dueDate?: string | null }) => {
       if (userId === undefined) return unauthorized()
-      const created = await todoStore.create(userId, title)
+      const created = await todoStore.create(userId, title, dueDate ?? null)
       return { content: [{ type: 'text' as const, text: JSON.stringify(created) }] }
     }
   )
@@ -81,16 +94,17 @@ export function createMcpServer(props?: MCPUserProps, store?: TodoStore) {
   server.registerTool(
     'update_todo',
     {
-      description: 'Todoのtitle/doneを更新する',
+      description: 'Todoのtitle/done/dueDateを更新する。dueDateはnullで解除',
       inputSchema: z.object({
         id: z.string(),
         title: titleSchema.optional(),
         done: z.boolean().optional(),
+        dueDate: dueDateInput,
       }),
     },
-    async ({ id, title, done }: { id: string; title?: string; done?: boolean }) => {
+    async ({ id, title, done, dueDate }: { id: string; title?: string; done?: boolean; dueDate?: string | null }) => {
       if (userId === undefined) return unauthorized()
-      const next = await todoStore.update(userId, id, { title, done })
+      const next = await todoStore.update(userId, id, { title, done, dueDate })
       if (!next) return notFound()
       return { content: [{ type: 'text' as const, text: JSON.stringify(next) }] }
     }

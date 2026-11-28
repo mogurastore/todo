@@ -40,4 +40,22 @@ describe('TodoStore seam', () => {
     expect(await store.remove(2, t.id)).toBe(false)
     expect((await store.list(1)).length).toBe(1)
   })
+
+  it('期限は任意で保持され、nullで解除できる', async () => {
+    const store = createMemoryTodoStore()
+    const withDate = await store.create(1, 'with', '2026-12-31')
+    expect(withDate.dueDate).toBe('2026-12-31')
+    const without = await store.create(1, 'without')
+    expect(without.dueDate).toBeNull()
+    const cleared = await store.update(1, withDate.id, { dueDate: null })
+    expect(cleared?.dueDate).toBeNull()
+    const kept = await store.update(1, without.id, { done: true })
+    expect(kept?.dueDate).toBeNull()
+  })
+
+  it('空文字は期限なしとして扱う', async () => {
+    const store = createMemoryTodoStore()
+    const t = await store.create(1, 'empty', '')
+    expect(t.dueDate).toBeNull()
+  })
 })
