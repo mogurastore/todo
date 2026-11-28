@@ -197,4 +197,53 @@ describe('MCPツール単体 (#27)', () => {
     const emptyText = await callTool(handler, 35, 'create_todo', { title: 'empty', dueDate: '' })
     expect(JSON.parse(parseFirstText(emptyText)).dueDate).toBeNull()
   })
+
+  function jstTodayViaUtc(): string {
+    // srcのIntl実装とは独立した算出で期待値を求める (JSTはDSTなしUTC+9)
+    return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  }
+
+  it('focusToday=trueでJST今日が刻まれ、todayOnlyで絞れる', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const jstToday = jstTodayViaUtc()
+    const focusedText = await callTool(handler, 40, 'create_todo', { title: '集中する', focusToday: true })
+    expect(JSON.parse(parseFirstText(focusedText)).focusDate).toBe(jstToday)
+    const plainText = await callTool(handler, 41, 'create_todo', { title: 'ふつう' })
+    expect(JSON.parse(parseFirstText(plainText)).focusDate).toBeNull()
+    const todayText = await callTool(handler, 42, 'list_todos', { todayOnly: true })
+    const todayTitles = (JSON.parse(parseFirstText(todayText)) as { title: string }[]).map((t) => t.title)
+    expect(todayTitles).toContain('集中する')
+    expect(todayTitles).not.toContain('ふつう')
+  })
+
+  it('updateのfocusTodayで付け替え・解除できる', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const jstToday = jstTodayViaUtc()
+    const createdId = parseCreatedId(await callTool(handler, 43, 'create_todo', { title: 'あとで集中' }))
+    const focusedText = await callTool(handler, 44, 'update_todo', { id: createdId, focusToday: true })
+    expect(JSON.parse(parseFirstText(focusedText)).focusDate).toBe(jstToday)
+    const todayText = await callTool(handler, 45, 'list_todos', { todayOnly: true })
+    expect(todayText).toContain('あとで集中')
+    const clearedText = await callTool(handler, 46, 'update_todo', { id: createdId, focusToday: false })
+    expect(JSON.parse(parseFirstText(clearedText)).focusDate).toBeNull()
+    const afterText = await callTool(handler, 47, 'list_todos', { todayOnly: true })
+    expect(afterText).not.toContain('あとで集中')
+  })
+
+  it('過去のフォーカス日は今日に出ず、完了済みは今日に出る', async () => {
+    const { createMemoryTodoStore } = await import('../src/todo')
+    const store = createMemoryTodoStore()
+    const handler = createMcpHandler(() => createMcpServer({ login: 'octocat', id: 42 }, store))
+    const pastId = parseCreatedId(await callTool(handler, 48, 'create_todo', { title: '昨日の集中' }))
+    await store.update(42, pastId, { focusDate: '2000-01-01' })
+    const doneId = parseCreatedId(await callTool(handler, 49, 'create_todo', { title: '今日やり切った', focusToday: true }))
+    await callTool(handler, 50, 'update_todo', { id: doneId, done: true })
+    const todayText = await callTool(handler, 51, 'list_todos', { todayOnly: true })
+    expect(todayText).not.toContain('昨日の集中')
+    expect(todayText).toContain('今日やり切った')
+  })
 })
